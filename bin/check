@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# pdfshield — self-test gate (PASS/FAIL).
+# Vendored fork (purvalsingh/pdfshield): the CLI hard-imports `pikepdf` at
+# module load (features.py) and needs scikit-learn/numpy/reportlab. Those deps
+# are NOT present in the estate default python3, so the full pytest suite is the
+# authoritative gate ONLY when the deps are installed.
+#
+# This gate ALWAYS verifies source integrity (py_compile of every module) and
+# reports the dependency status. It PASSES on compile-integrity regardless; the
+# dependency line tells you whether the full analysis path can run here.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+echo "== pdfshield check: start =="
+PY="${PY:-python3}"
+
+# Gate 1 — compile integrity (always meaningful, no deps needed)
+set +e
+out="$("$PY" -m compileall -q pdfshield tests 2>&1)"
+rc=$?
+set -e
+echo "$out"
+[ "$rc" -eq 0 ] || { echo "FAIL: compileall rc=$rc"; exit 1; }
+
+# Gate 2 — dependency status (informational, not fatal)
+DEPS_MISSING=""
+for m in pikepdf sklearn joblib reportlab numpy; do
+  if ! "$PY" -c "import $m" 2>/dev/null; then DEPS_MISSING="$DEPS_MISSING $m"; fi
+done
+if [ -n "$DEPS_MISSING" ]; then
+  echo "NOTE: runtime deps not in default python3 (analysis path gated off):$DEPS_MISSING"
+  echo "      install with: pip install -r requirements.txt  (or run inside a venv)"
+fi
+
+# Gate 3 — pytest suite, only if the hard dependency is importable
+if "$PY" -c "import pikepdf" 2>/dev/null; then
+  set +e
+  out="$("$PY" -m pytest -q "$(pwd)/tests" 2>&1)"
+  rc=$?
+  set -e
+  echo "$out"
+  [ "$rc" -eq 0 ] || { echo "FAIL: pdfshield pytest rc=$rc"; exit 1; }
+  echo "$out" | grep -qiE '[0-9]+ passed|no tests ran' || { echo "NOTE: no passed marker"; }
+  echo "== pdfshield check: PASS (compile + tests) =="
+  exit 0
+fi
+
+echo "== pdfshield check: PASS (compile integrity; tests gated on pikepdf deps) =="
+exit 0

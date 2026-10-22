@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# pdfshield — primary operation: PDF malware analysis / benchmark CLI.
+# Entry: `python3 -m pdfshield` (runtime package) or pdfshield/cli.py.
+# Repo root virt: the package dir is `pdfshield/pdfshield/`.
+#
+# Usage:
+#   bin/run [cli args...]   # pass through (default: --help)
+#   bin/run check           # fast self-test gate
+set -euo pipefail
+cd "$(dirname "$0")/.."
+PY="${PY:-python3}"
+
+if [ "${1:-}" = "check" ]; then
+  exec ./bin/check
+fi
+
+# PDF analysis hard-imports pikepdf at module load; surface a clear message
+# if the runtime deps are absent rather than a bare traceback.
+if ! "$PY" -c "import pikepdf" 2>/dev/null; then
+  echo "pdfshield: runtime deps missing (pikepdf et al). Install with:"
+  echo "  pip install -r requirements.txt   # or run inside a build venv"
+  echo "For a compile/source-integrity check that always works:  bin/check"
+  exit 1
+fi
+
+# CLI help via the runtime entry
+if [ -f "pdfshield/__main__.py" ]; then
+  if [ "$#" -eq 0 ]; then
+    exec "$PY" -m pdfshield --help
+  fi
+  exec "$PY" -m pdfshield "$@"
+fi
+
+CLI="$(pwd)/pdfshield/cli.py"
+if [ "$#" -eq 0 ]; then
+  exec "$PY" "$CLI" --help
+fi
+exec "$PY" "$CLI" "$@"
